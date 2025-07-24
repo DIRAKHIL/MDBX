@@ -42,114 +42,142 @@ struct MatchedPair: Identifiable {
 class MetadataExtractor {
     // Extract metadata from video files
     func extractMetadata(from url: URL, completion: @escaping (Result<ClipMetadata, Error>) -> Void) {
-        let asset = AVAsset(url: url)
+        let asset = AVURLAsset(url: url)
         
         var metadata = ClipMetadata(filename: url.lastPathComponent, path: url)
         
-        // Get duration
-        let duration = asset.duration
-        metadata.duration = CMTimeGetSeconds(duration)
-        
-        // Get frame rate if available
-        if let videoTrack = asset.tracks(withMediaType: .video).first {
-            let frameRate = videoTrack.nominalFrameRate
-            metadata.frameRate = frameRate
-            
-            // Get resolution
-            let size = videoTrack.naturalSize
-            metadata.resolution = "\(Int(size.width))x\(Int(size.height))"
-        }
-        
-        // Extract timecode if available
-        extractTimecode(from: asset) { timecode in
-            metadata.timecode = timecode
-            
-            // Extract text from first frame
-            self.extractTextFromFirstFrame(of: asset) { result in
-                switch result {
-                case .success(let extractedText):
+        // Use async/await with Task for modern API
+        Task {
+            do {
+                // Get duration
+                let duration = try await asset.load(.duration)
+                metadata.duration = CMTimeGetSeconds(duration)
+                
+                // Get video tracks
+                let videoTracks = try await asset.loadTracks(withMediaType: .video)
+                
+                if let videoTrack = videoTracks.first {
+                    // Get frame rate
+                    let frameRate = try await videoTrack.load(.nominalFrameRate)
+                    metadata.frameRate = frameRate
+                    
+                    // Get resolution
+                    let size = try await videoTrack.load(.naturalSize)
+                    metadata.resolution = "\(Int(size.width))x\(Int(size.height))"
+                }
+                
+                // Extract timecode if available
+                let timecode = await extractTimecode(from: asset)
+                metadata.timecode = timecode
+                
+                // Extract text from first frame
+                do {
+                    let extractedText = try await extractTextFromFirstFrame(of: asset)
                     metadata.extractedText = extractedText
                     
                     // Try to identify clip name from extracted text
                     metadata.clipName = self.identifyClipName(from: extractedText)
-                    
-                case .failure(let error):
+                } catch {
                     print("Error extracting text: \(error.localizedDescription)")
                 }
                 
-                completion(.success(metadata))
+                // Return the metadata
+                DispatchQueue.main.async {
+                    completion(.success(metadata))
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
             }
         }
     }
     
     // Extract timecode from video asset
-    private func extractTimecode(from asset: AVAsset, completion: @escaping (String?) -> Void) {
-        asset.loadMetadata(for: .quickTimeMetadata) { metadata, _ in
-            guard let metadata = metadata else {
-                completion(nil)
-                return
-            }
+    private func extractTimecode(from asset: AVAsset) async -> String? {
+        do {
+            let metadata = try await asset.loadMetadata(for: .quickTimeMetadata)
             
             for item in metadata {
                 if item.commonKey?.rawValue == "timecode" {
-                    if let timecodeValue = item.value as? String {
-                        completion(timecodeValue)
-                        return
+                    if let timecodeValue = try await item.load(.value) as? String {
+                        return timecodeValue
                     }
                 }
             }
             
-            completion(nil)
+            return nil
+        } catch {
+            print("Error extracting timecode: \(error.localizedDescription)")
+            return nil
         }
     }
     
     // Extract text from the first frame of a video
-    private func extractTextFromFirstFrame(of asset: AVAsset, completion: @escaping (Result<[String], Error>) -> Void) {
+    private func extractTextFromFirstFrame(of asset: AVAsset) async throws -> [String] {
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         
-        do {
-            let time = CMTime(seconds: 0, preferredTimescale: 600)
-            let imageRef = try generator.copyCGImage(at: time, actualTime: nil)
-            let image = CIImage(cgImage: imageRef)
-            
-            // Perform text recognition
-            recognizeText(in: image) { result in
-                completion(result)
+        let time = CMTime(seconds: 0, preferredTimescale: 600)
+        
+        // Use the new async API
+        return try await withCheckedThrowingContinuation { continuation in
+            generator.generateCGImageAsynchronously(for: time) { cgImage, actualTime, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                guard let cgImage = cgImage else {
+                    continuation.resume(throwing: NSError(domain: "MetadataExtractor", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to generate image"]))
+                    return
+                }
+                
+                let image = CIImage(cgImage: cgImage)
+                
+                // Perform text recognition
+                Task {
+                    do {
+                        let recognizedText = try await self.recognizeText(in: image)
+                        continuation.resume(returning: recognizedText)
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
             }
-        } catch {
-            completion(.failure(error))
         }
     }
     
     // Perform OCR on an image
-    private func recognizeText(in image: CIImage, completion: @escaping (Result<[String], Error>) -> Void) {
-        let textRecognitionRequest = VNRecognizeTextRequest { request, error in
-            if let error = error {
-                completion(.failure(error))
-                return
+    private func recognizeText(in image: CIImage) async throws -> [String] {
+        return try await withCheckedThrowingContinuation { continuation in
+            let textRecognitionRequest = VNRecognizeTextRequest { request, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                guard let observations = request.results as? [VNRecognizedTextObservation] else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                
+                let recognizedText = observations.compactMap { observation in
+                    observation.topCandidates(1).first?.string
+                }
+                
+                continuation.resume(returning: recognizedText)
             }
             
-            guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                completion(.success([]))
-                return
-            }
+            textRecognitionRequest.recognitionLevel = .accurate
             
-            let recognizedText = observations.compactMap { observation in
-                observation.topCandidates(1).first?.string
-            }
+            let requestHandler = VNImageRequestHandler(ciImage: image, options: [:])
             
-            completion(.success(recognizedText))
-        }
-        
-        textRecognitionRequest.recognitionLevel = .accurate
-        
-        let requestHandler = VNImageRequestHandler(ciImage: image, options: [:])
-        
-        do {
-            try requestHandler.perform([textRecognitionRequest])
-        } catch {
-            completion(.failure(error))
+            do {
+                try requestHandler.perform([textRecognitionRequest])
+            } catch {
+                continuation.resume(throwing: error)
+            }
         }
     }
     

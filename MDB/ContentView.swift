@@ -170,10 +170,7 @@ struct ContentView: View {
                                         Spacer()
                                         Text("Match Confidence: \(Int(match.matchConfidence * 100))%")
                                             .font(.caption)
-                                            .foregroundColor(
-                                                match.matchConfidence > 0.8 ? .green :
-                                                match.matchConfidence > 0.6 ? .orange : .red
-                                            )
+                                            .foregroundColor(getConfidenceColor(confidence: match.matchConfidence))
                                         Spacer()
                                     }
                                 }
@@ -360,6 +357,16 @@ struct ContentView: View {
             return "metadata_bridge_\(dateString).csv"
         case .detailedReport:
             return "metadata_bridge_report_\(dateString).txt"
+        }
+    }
+    
+    private func getConfidenceColor(confidence: Double) -> Color {
+        if confidence > 0.8 {
+            return .green
+        } else if confidence > 0.6 {
+            return .orange
+        } else {
+            return .red
         }
     }
 }
