@@ -11,7 +11,7 @@ import Vision
 import CoreImage
 
 // Struct to hold extracted metadata
-struct ClipMetadata: Identifiable, Hashable {
+struct ClipMetadata: Identifiable, Hashable, Sendable {
     var id = UUID()
     var filename: String
     var path: URL
@@ -32,14 +32,15 @@ struct ClipMetadata: Identifiable, Hashable {
 }
 
 // Struct to represent a matched pair of files
-struct MatchedPair: Identifiable {
+struct MatchedPair: Identifiable, Sendable {
     var id = UUID()
     var monitorFile: ClipMetadata
     var ditFile: ClipMetadata
     var matchConfidence: Double
 }
 
-class MetadataExtractor {
+@available(macOS 13.0, *)
+final class MetadataExtractor: @unchecked Sendable {
     // Extract metadata from video files
     func extractMetadata(from url: URL, completion: @escaping (Result<ClipMetadata, Error>) -> Void) {
         let asset = AVURLAsset(url: url)

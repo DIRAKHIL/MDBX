@@ -168,7 +168,8 @@ struct ContentView: View {
                                     
                                     HStack {
                                         Spacer()
-                                        Text("Match Confidence: \(Int(match.matchConfidence * 100))%")
+                                        let confidencePercent = Int(match.matchConfidence * 100)
+                                        Text("Match Confidence: \(confidencePercent)%")
                                             .font(.caption)
                                             .foregroundColor(getConfidenceColor(confidence: match.matchConfidence))
                                         Spacer()
