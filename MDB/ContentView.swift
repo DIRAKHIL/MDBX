@@ -33,10 +33,13 @@ struct ContentView: View {
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 20) {
+            VStack {
+                Spacer().frame(height: 20)
                 Text("Metadata Bridge")
                     .font(.largeTitle)
                     .fontWeight(.bold)
+                
+                Spacer().frame(height: 10)
                 
                 Text("Connect monitor-recorded files with high-quality DIT footage")
                     .font(.subheadline)
@@ -44,7 +47,11 @@ struct ContentView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
                 
+                Spacer().frame(height: 10)
+                
                 Divider()
+                
+                Spacer().frame(height: 10)
                 
                 // Monitor Files Section
                 VStack(alignment: .leading) {
@@ -78,6 +85,8 @@ struct ContentView: View {
                     }
                 }
                 .padding(.horizontal)
+                
+                Spacer().frame(height: 20)
                 
                 // DIT Files Section
                 VStack(alignment: .leading) {
@@ -114,6 +123,8 @@ struct ContentView: View {
                 
                 Divider()
                 
+                Spacer().frame(height: 20)
+                
                 HStack {
                     // Process Button
                     Button(action: processFiles) {
@@ -140,6 +151,8 @@ struct ContentView: View {
                 }
                 .padding()
                 
+                Spacer().frame(height: 10)
+                
                 if !processingStatus.isEmpty {
                     Text(processingStatus)
                         .foregroundColor(processingStatus.contains("Error") ? .red : .green)
@@ -148,6 +161,7 @@ struct ContentView: View {
                 
                 // Results Section (only visible after processing)
                 if !matches.isEmpty {
+                    Spacer().frame(height: 10)
                     VStack(alignment: .leading) {
                         Text("Matched Files")
                             .font(.headline)
